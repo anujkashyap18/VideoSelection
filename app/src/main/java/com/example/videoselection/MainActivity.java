@@ -21,28 +21,28 @@ import android.widget.MediaController;
 import android.widget.Toast;
 import android.widget.VideoView;
 
-import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
-import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
-import com.github.hiteshsondhi88.libffmpeg.LoadBinaryResponseHandler;
-import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedException;
-
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
 
     VideoView showVideo;
-    ImageView pickVideo,editVideo,saveVideo,editImage;
+    ImageView pickVideo, editVideo, saveVideo, editImage;
     Uri uri;
     MediaController mediaController;
     InputStream id;
+    Timer timer;
+    boolean isActive;
+    public final static int POOLING_INTERVAL_MS = 100;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        showVideo = findViewById(R.id.sho_video); 
+        showVideo = findViewById(R.id.sho_video);
         pickVideo = findViewById(R.id.pick_video);
         editVideo = findViewById(R.id.edit_video);
         saveVideo = findViewById(R.id.edit_save);
@@ -55,8 +55,8 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 Intent intent = new Intent();
                 intent.setAction(Intent.ACTION_GET_CONTENT);
-                intent.setDataAndType(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,"video/*");
-                startActivityForResult(intent,2000);
+                intent.setDataAndType(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "video/*");
+                startActivityForResult(intent, 2000);
             }
         });
 
@@ -67,7 +67,7 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     //path of the video of which you want frames
                     retriever.setDataSource(String.valueOf(uri));
-                }catch (Exception e) {
+                } catch (Exception e) {
 
                 }
 
@@ -76,13 +76,13 @@ public class MainActivity extends AppCompatActivity {
                 int duration_second = duration_millisec / 1000;  //millisec to sec.
                 int frames_per_second = 30;  //no. of frames want to retrieve per second
                 int numeroFrameCaptured = frames_per_second * duration_second;
-                long frame_us=1000000/30;
+                long frame_us = 1000000 / 30;
                 //capture=="+numeroFrameCaptured);
 
-                    //setting time position at which you want to retrieve frames
+                //setting time position at which you want to retrieve frames
 
-                  Bitmap bm = retriever.getFrameAtTime(1000);
-
+                Bitmap bm = retriever.getFrameAtTime(1000);
+                initVideoProgressPooling(4000);
 
                 retriever.release();
             }
@@ -91,89 +91,81 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    public String getPath ( final Context context , final Uri uri ) {
+    public String getPath(final Context context, final Uri uri) {
 
         // DocumentProvider
-        if ( Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && DocumentsContract.isDocumentUri ( context , uri ) ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && DocumentsContract.isDocumentUri(context, uri)) {
 
-            if ( isExternalStorageDocument ( uri ) ) {// ExternalStorageProvider
-                final String docId = DocumentsContract.getDocumentId ( uri );
-                final String[] split = docId.split ( ":" );
-                final String type = split[ 0 ];
+            if (isExternalStorageDocument(uri)) {// ExternalStorageProvider
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                final String type = split[0];
                 String storageDefinition;
 
 
-                if ( "primary".equalsIgnoreCase ( type ) ) {
+                if ("primary".equalsIgnoreCase(type)) {
 
-                    return Environment.getExternalStorageDirectory ( ) + "/" + split[ 1 ];
+                    return Environment.getExternalStorageDirectory() + "/" + split[1];
 
-                }
-                else {
+                } else {
 
-                    if ( Environment.isExternalStorageRemovable ( ) ) {
+                    if (Environment.isExternalStorageRemovable()) {
                         storageDefinition = "EXTERNAL_STORAGE";
 
-                    }
-                    else {
+                    } else {
                         storageDefinition = "SECONDARY_STORAGE";
                     }
 
-                    return System.getenv ( storageDefinition ) + "/" + split[ 1 ];
+                    return System.getenv(storageDefinition) + "/" + split[1];
                 }
 
-            }
-            else if ( isDownloadsDocument ( uri ) ) {// DownloadsProvider
+            } else if (isDownloadsDocument(uri)) {// DownloadsProvider
 
-                final String id = DocumentsContract.getDocumentId ( uri );
-                final Uri contentUri = ContentUris.withAppendedId (
-                        Uri.parse ( "content://downloads/public_downloads" ) , Long.valueOf ( id ) );
+                final String id = DocumentsContract.getDocumentId(uri);
+                final Uri contentUri = ContentUris.withAppendedId(
+                        Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
 
-                return getDataColumn ( context , contentUri , null , null );
+                return getDataColumn(context, contentUri, null, null);
 
-            }
-            else if ( isMediaDocument ( uri ) ) {// MediaProvider
-                final String docId = DocumentsContract.getDocumentId ( uri );
-                final String[] split = docId.split ( ":" );
-                final String type = split[ 0 ];
+            } else if (isMediaDocument(uri)) {// MediaProvider
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                final String type = split[0];
 
                 Uri contentUri = null;
-                if ( "image".equals ( type ) ) {
+                if ("image".equals(type)) {
                     contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-                }
-                else if ( "video".equals ( type ) ) {
+                } else if ("video".equals(type)) {
                     contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
-                }
-                else if ( "audio".equals ( type ) ) {
+                } else if ("audio".equals(type)) {
                     contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
                 }
 
                 final String selection = "_id=?";
-                final String[] selectionArgs = new String[] {
-                        split[ 1 ]
+                final String[] selectionArgs = new String[]{
+                        split[1]
                 };
 
-                return getDataColumn ( context , contentUri , selection , selectionArgs );
+                return getDataColumn(context, contentUri, selection, selectionArgs);
             }
 
-        }
-        else if ( "content".equalsIgnoreCase ( uri.getScheme ( ) ) ) {// MediaStore (and general)
+        } else if ("content".equalsIgnoreCase(uri.getScheme())) {// MediaStore (and general)
 
             // Return the remote address
-            if ( isGooglePhotosUri ( uri ) ) {
-                return uri.getLastPathSegment ( );
+            if (isGooglePhotosUri(uri)) {
+                return uri.getLastPathSegment();
             }
 
-            return getDataColumn ( context , uri , null , null );
+            return getDataColumn(context, uri, null, null);
 
-        }
-        else if ( "file".equalsIgnoreCase ( uri.getScheme ( ) ) ) {// File
-            return uri.getPath ( );
+        } else if ("file".equalsIgnoreCase(uri.getScheme())) {// File
+            return uri.getPath();
         }
 
         return null;
     }
 
-    public static String getDataColumn ( Context context , Uri uri , String selection , String[] selectionArgs ) {
+    public static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
 
         Cursor cursor = null;
         final String column = "_data";
@@ -182,41 +174,41 @@ public class MainActivity extends AppCompatActivity {
         };
 
         try {
-            cursor = context.getContentResolver ( ).query ( uri , projection , selection , selectionArgs , null );
-            if ( cursor != null && cursor.moveToFirst ( ) ) {
-                final int column_index = cursor.getColumnIndexOrThrow ( column );
-                return cursor.getString ( column_index );
+            cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                final int column_index = cursor.getColumnIndexOrThrow(column);
+                return cursor.getString(column_index);
             }
         } finally {
-            if ( cursor != null ) {
-                cursor.close ( );
+            if (cursor != null) {
+                cursor.close();
             }
         }
         return null;
     }
 
-    public static boolean isExternalStorageDocument ( Uri uri ) {
-        return "com.android.externalstorage.documents".equals ( uri.getAuthority ( ) );
+    public static boolean isExternalStorageDocument(Uri uri) {
+        return "com.android.externalstorage.documents".equals(uri.getAuthority());
     }
 
-    public static boolean isDownloadsDocument ( Uri uri ) {
-        return "com.android.providers.downloads.documents".equals ( uri.getAuthority ( ) );
+    public static boolean isDownloadsDocument(Uri uri) {
+        return "com.android.providers.downloads.documents".equals(uri.getAuthority());
     }
 
-    public static boolean isMediaDocument ( Uri uri ) {
-        return "com.android.providers.media.documents".equals ( uri.getAuthority ( ) );
+    public static boolean isMediaDocument(Uri uri) {
+        return "com.android.providers.media.documents".equals(uri.getAuthority());
     }
 
-    public static boolean isGooglePhotosUri ( Uri uri ) {
-        return "com.google.android.apps.photos.content".equals ( uri.getAuthority ( ) );
+    public static boolean isGooglePhotosUri(Uri uri) {
+        return "com.google.android.apps.photos.content".equals(uri.getAuthority());
     }
 
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 2000){
-            if (resultCode == RESULT_OK){
+        if (requestCode == 2000) {
+            if (resultCode == RESULT_OK) {
                 uri = data.getData();
                 showVideo.setVideoURI(uri);
                 mediaController.setAnchorView(showVideo);
@@ -224,5 +216,52 @@ public class MainActivity extends AppCompatActivity {
                 showVideo.start();
             }
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        isActive = false;
+        cancelProgressPooling();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        showVideo.requestFocus();
+        showVideo.start();
+        initVideoProgressPooling(4000);
+    }
+
+
+    private void initVideoProgressPooling(final int stopAtMsec) {
+        cancelProgressPooling();
+        timer = new Timer();
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                showVideo.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!isActive) {
+                            cancelProgressPooling();
+                            return;
+                        }
+                        if(showVideo.getCurrentPosition() >= stopAtMsec) {
+                            showVideo.pause();
+                            cancelProgressPooling();
+                            Toast.makeText(MainActivity.this, "Video has PAUSED at: " + showVideo.getCurrentPosition(), Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
+            }
+        }, 0, POOLING_INTERVAL_MS);
+    }
+
+    private void cancelProgressPooling() {
+        if(timer != null) {
+            timer.cancel();
+        }
+        timer = null;
     }
 }
